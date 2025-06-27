@@ -11,76 +11,76 @@ public class AnsibleService {
      * Ping a Windows VM using Ansible
      */
     public String pingVM(String host, String user, String pass) {
+        validateInput(host, user, pass);
+        
         String command = String.format(
-            "ansible all -i %s, -m win_ping --user %s " +
-            "--connection=winrm --extra-vars \"ansible_password=%s " +
-            "ansible_port=5985 ansible_winrm_server_cert_validation=ignore\" " +
-            "--forks=1",
+            "ansible all -i \"%s,\" -m win_ping -e \"ansible_user=%s ansible_password='%s' ansible_connection=winrm ansible_winrm_server_cert_validation=ignore ansible_winrm_transport=basic ansible_port=5985\"",
             host, user, pass
         );
-        return executeAnsibleCommand(command);
+        
+        return executeCommand(command);
     }
 
     /**
      * Check IIS service status
      */
     public String checkIISStatus(String host, String user, String pass) {
+        validateInput(host, user, pass);
+        
         String command = String.format(
-            "ansible all -i %s, -m win_service --user %s " +
-            "--connection=winrm --extra-vars \"ansible_password=%s " +
-            "ansible_port=5985 ansible_winrm_server_cert_validation=ignore\" " +
-            "-a \"name=W3SVC\" --forks=1",
+            "ansible all -i \"%s,\" -m win_service -a \"name=W3SVC\" -e \"ansible_user=%s ansible_password='%s' ansible_connection=winrm ansible_winrm_server_cert_validation=ignore ansible_winrm_transport=basic ansible_port=5985\"",
             host, user, pass
         );
-        return executeAnsibleCommand(command);
+        
+        return executeCommand(command);
     }
 
     /**
      * Start IIS service
      */
     public String startIIS(String host, String user, String pass) {
+        validateInput(host, user, pass);
+        
         String command = String.format(
-            "ansible all -i %s, -m win_service --user %s " +
-            "--connection=winrm --extra-vars \"ansible_password=%s " +
-            "ansible_port=5985 ansible_winrm_server_cert_validation=ignore\" " +
-            "-a \"name=W3SVC state=started\" --forks=1",
+            "ansible all -i \"%s,\" -m win_service -a \"name=W3SVC state=started\" -e \"ansible_user=%s ansible_password='%s' ansible_connection=winrm ansible_winrm_server_cert_validation=ignore ansible_winrm_transport=basic ansible_port=5985\"",
             host, user, pass
         );
-        return executeAnsibleCommand(command);
+        
+        return executeCommand(command);
     }
 
     /**
      * Stop IIS service
      */
     public String stopIIS(String host, String user, String pass) {
+        validateInput(host, user, pass);
+        
         String command = String.format(
-            "ansible all -i %s, -m win_service --user %s " +
-            "--connection=winrm --extra-vars \"ansible_password=%s " +
-            "ansible_port=5985 ansible_winrm_server_cert_validation=ignore\" " +
-            "-a \"name=W3SVC state=stopped\" --forks=1",
+            "ansible all -i \"%s,\" -m win_service -a \"name=W3SVC state=stopped\" -e \"ansible_user=%s ansible_password='%s' ansible_connection=winrm ansible_winrm_server_cert_validation=ignore ansible_winrm_transport=basic ansible_port=5985\"",
             host, user, pass
         );
-        return executeAnsibleCommand(command);
+        
+        return executeCommand(command);
     }
 
     /**
      * Restart IIS service
      */
     public String restartIIS(String host, String user, String pass) {
+        validateInput(host, user, pass);
+        
         String command = String.format(
-            "ansible all -i %s, -m win_service --user %s " +
-            "--connection=winrm --extra-vars \"ansible_password=%s " +
-            "ansible_port=5985 ansible_winrm_server_cert_validation=ignore\" " +
-            "-a \"name=W3SVC state=restarted\" --forks=1",
+            "ansible all -i \"%s,\" -m win_service -a \"name=W3SVC state=restarted\" -e \"ansible_user=%s ansible_password='%s' ansible_connection=winrm ansible_winrm_server_cert_validation=ignore ansible_winrm_transport=basic ansible_port=5985\"",
             host, user, pass
         );
-        return executeAnsibleCommand(command);
+        
+        return executeCommand(command);
     }
 
     /**
      * Execute Ansible command with proper environment setup
      */
-    private String executeAnsibleCommand(String command) {
+    private String executeCommand(String command) {
         StringBuilder result = new StringBuilder();
 
         try {

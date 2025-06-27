@@ -5,6 +5,9 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.lang.ProcessBuilder;
 
 @Service
 public class IISMonitorService {
@@ -22,33 +25,31 @@ public class IISMonitorService {
     private boolean monitoringEnabled = true;
 
     /**
-     * Scheduled task to check IIS status every 30 minutes
-     * Fixed rate of 30 minutes = 30 * 60 * 1000 milliseconds
+     * Scheduled task to check IIS status every 5 minutes
      */
-    @Scheduled(fixedRate = 30 * 60 * 1000) // 30 minutes
-    public void monitorIISStatus() {
+    @Scheduled(fixedRate = 300000) // 5 minutes = 300,000 milliseconds
+    public void scheduledIISStatusCheck() {
         if (!monitoringEnabled) {
-            logger.info("IIS monitoring is disabled");
+            logger.debug("IIS monitoring is disabled - skipping scheduled check");
             return;
         }
         
         logger.info("Starting scheduled IIS status check...");
-        
         try {
             // Check IIS status
-            String statusResult = ansibleService.checkIISStatus(monitoredHost, monitoredUser, monitoredPass);
+            String statusResult = checkIISStatus();
             logger.info("IIS Status Check Result: {}", statusResult);
             
             // Check if IIS is running
-            if (isIISRunning(statusResult)) {
-                logger.info("IIS is running normally - no action needed");
-            } else {
+            if (!isIISRunning(statusResult)) {
                 logger.warn("IIS is not running - attempting to start it automatically");
                 startIISAutomatically();
+            } else {
+                logger.info("IIS is running normally - no action needed");
             }
             
         } catch (Exception e) {
-            logger.error("Error during scheduled IIS monitoring: {}", e.getMessage(), e);
+            logger.error("Error during scheduled IIS status check: {}", e.getMessage(), e);
         }
     }
 
@@ -88,7 +89,7 @@ public class IISMonitorService {
     private void startIISAutomatically() {
         try {
             logger.info("Attempting to start IIS automatically...");
-            String startResult = ansibleService.startIIS(monitoredHost, monitoredUser, monitoredPass);
+            String startResult = startIIS();
             logger.info("IIS Auto-Start Result: {}", startResult);
             
             if (startResult.contains("SUCCESS") || startResult.contains("CHANGED")) {
@@ -108,7 +109,7 @@ public class IISMonitorService {
     public String checkIISStatusNow() {
         logger.info("Manual IIS status check triggered");
         try {
-            String result = ansibleService.checkIISStatus(monitoredHost, monitoredUser, monitoredPass);
+            String result = checkIISStatus();
             logger.info("Manual IIS Status Check Result: {}", result);
             return result;
         } catch (Exception e) {
@@ -148,5 +149,72 @@ public class IISMonitorService {
     public String getMonitoringConfig() {
         return String.format("Host: %s, User: %s, Monitoring: %s", 
                            monitoredHost, monitoredUser, monitoringEnabled ? "Enabled" : "Disabled");
+    }
+
+    /**
+     * Check IIS status using Ansible
+     */
+    private String checkIISStatus() {
+        String command = String.format(
+            "ansible all -i \"%s,\" -m win_service -a \"name=W3SVC\" -e \"ansible_user=%s ansible_password='%s' ansible_connection=winrm ansible_winrm_server_cert_validation=ignore ansible_winrm_transport=basic ansible_port=5985\"",
+            monitoredHost, monitoredUser, monitoredPass
+        );
+        
+        return executeCommand(command);
+    }
+    
+    /**
+     * Start IIS using Ansible
+     */
+    private String startIIS() {
+        String command = String.format(
+            "ansible all -i \"%s,\" -m win_service -a \"name=W3SVC state=started\" -e \"ansible_user=%s ansible_password='%s' ansible_connection=winrm ansible_winrm_server_cert_validation=ignore ansible_winrm_transport=basic ansible_port=5985\"",
+            monitoredHost, monitoredUser, monitoredPass
+        );
+        
+        return executeCommand(command);
+    }
+
+    /**
+     * Execute a command and return the result
+     */
+    private String executeCommand(String command) {
+        StringBuilder result = new StringBuilder();
+        
+        try {
+            // Set environment variables for macOS multiprocessing
+            ProcessBuilder pb = new ProcessBuilder("bash", "-c", command);
+            pb.environment().put("OBJC_DISABLE_INITIALIZE_FORK_SAFETY", "YES");
+            pb.environment().put("ANSIBLE_FORKS", "1");
+            
+            Process process = pb.start();
+            
+            // Read output
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    result.append(line).append("\n");
+                }
+            }
+            
+            // Read error output
+            try (BufferedReader errorReader = new BufferedReader(new InputStreamReader(process.getErrorStream()))) {
+                String line;
+                while ((line = errorReader.readLine()) != null) {
+                    result.append("ERROR: ").append(line).append("\n");
+                }
+            }
+            
+            int exitCode = process.waitFor();
+            if (exitCode != 0) {
+                logger.error("Command failed with exit code: {}", exitCode);
+            }
+            
+        } catch (Exception e) {
+            logger.error("Error executing command: {}", e.getMessage(), e);
+            result.append("ERROR: ").append(e.getMessage());
+        }
+        
+        return result.toString();
     }
 } 
