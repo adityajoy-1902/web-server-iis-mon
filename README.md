@@ -65,6 +65,9 @@ sudo yum install ansible
 
 # Using pip (alternative)
 pip3 install ansible
+
+# Install Windows collection (REQUIRED for Windows management)
+ansible-galaxy collection install ansible.windows
 ```
 
 #### 4. Environment Variables (macOS)
