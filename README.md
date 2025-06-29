@@ -86,47 +86,53 @@ source ~/.zshrc
 
 ## 🖥️ Windows VM Setup
 
-### 1. Enable WinRM on Windows VM
+### Step 1: Configure WinRM on Windows VM
 
-Run these PowerShell commands **as Administrator** on your Windows VM:
+**IMPORTANT**: Run these PowerShell commands **as Administrator** on your Windows VM:
 
+#### 1.1 Enable WinRM Service
 ```powershell
 # Enable WinRM service
 Enable-PSRemoting -Force
+```
 
-# Configure WinRM for HTTPS (recommended for production)
-winrm quickconfig -transport:https
+#### 1.2 Configure WinRM for HTTP (Port 5985)
+```powershell
+# Configure WinRM for HTTP (port 5985)
+winrm quickconfig -transport:http
 
-# Configure NTLM authentication (more secure than basic)
-Set-Item -Path WSMan:\localhost\Service\Auth\NTLM -Value $true
-Set-Item -Path WSMan:\localhost\Service\Auth\Basic -Value $false
+# Configure basic authentication
+Set-Item -Path WSMan:\localhost\Service\Auth\Basic -Value $true
 
-# Configure HTTPS listener on port 5986
-New-Item -Path WSMan:\localhost\Listener -Address * -Transport HTTPS -Hostname $env:COMPUTERNAME -Port 5986 -CertificateThumbprint (Get-ChildItem Cert:\LocalMachine\My | Where-Object {$_.Subject -like "*$env:COMPUTERNAME*"} | Select-Object -First 1).Thumbprint -Force
+# Configure WinRM to allow unencrypted traffic (for basic auth)
+Set-Item -Path WSMan:\localhost\Service\AllowUnencrypted -Value $true
 
+# Configure WinRM to allow credentials delegation
+Set-Item -Path WSMan:\localhost\Service\Auth\CredSSP -Value $true
+```
+
+#### 1.3 Configure Windows Firewall
+```powershell
+# Allow HTTP WinRM through Windows Firewall
+New-NetFirewallRule -DisplayName "Windows Remote Management (HTTP-In)" -Profile Any -Direction Inbound -Action Allow -Protocol TCP -LocalPort 5985
+
+# Allow HTTPS WinRM (optional, for enhanced security)
+New-NetFirewallRule -DisplayName "Windows Remote Management (HTTPS-In)" -Profile Any -Direction Inbound -Action Allow -Protocol TCP -LocalPort 5986
+```
+
+#### 1.4 Restart WinRM Service
+```powershell
 # Restart WinRM service
 Restart-Service WinRM
 
-# Verify HTTPS listener
-Get-ChildItem WSMan:\localhost\Listener
+# Verify WinRM is running
+Get-Service WinRM
 
-# Allow HTTPS WinRM through Windows Firewall
-New-NetFirewallRule -DisplayName "Windows Remote Management (HTTPS-In)" -Profile Any -Direction Inbound -Action Allow -Protocol TCP -LocalPort 5986
+# Test WinRM locally
+Test-WSMan -ComputerName localhost
 ```
 
-**Note**: This configuration uses HTTPS WinRM (port 5986) with NTLM authentication for enhanced security.
-
-### 2. Configure Windows Firewall
-
-```powershell
-# Allow WinRM traffic through Windows Firewall
-New-NetFirewallRule -DisplayName "Windows Remote Management (HTTP-In)" -Profile Any -Direction Inbound -Action Allow -Protocol TCP -LocalPort 5985
-
-# Allow HTTPS WinRM (recommended for production)
-New-NetFirewallRule -DisplayName "Windows Remote Management (HTTPS-In)" -Profile Any -Direction Inbound -Action Allow -Protocol TCP -LocalPort 5986
-```
-
-### 3. Create Admin User (if needed)
+### Step 2: Create Admin User (if needed)
 
 ```powershell
 # Create a new administrator user
@@ -139,13 +145,134 @@ Add-LocalGroupMember -Group "Administrators" -Member "admin"
 Get-LocalUser -Name "admin"
 ```
 
-### 4. Test WinRM Connection
+### Step 3: Verify IIS Installation
+
+```powershell
+# Check if IIS is installed
+Get-WindowsFeature -Name Web-Server
+
+# Install IIS if not present
+Install-WindowsFeature -Name Web-Server -IncludeManagementTools
+
+# Check IIS service status
+Get-Service -Name W3SVC
+
+# Start IIS if not running
+Start-Service -Name W3SVC
+```
+
+## ☁️ Google Cloud Platform (GCP) Firewall Setup
+
+### Step 1: Install Google Cloud CLI
+
+```bash
+# macOS (using Homebrew)
+brew install google-cloud-sdk
+
+# Ubuntu/Debian
+curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
+echo "deb https://packages.cloud.google.com/apt cloud-sdk main" | sudo tee -a /etc/apt/sources.list.d/google-cloud-sdk.list
+sudo apt-get update && sudo apt-get install google-cloud-cli
+
+# Windows
+# Download from: https://cloud.google.com/sdk/docs/install
+```
+
+### Step 2: Authenticate with GCP
+
+```bash
+# Login to your Google account
+gcloud auth login
+
+# Set your project ID
+gcloud config set project YOUR_PROJECT_ID
+
+# Verify current project
+gcloud config get-value project
+```
+
+### Step 3: Create Firewall Rules
+
+#### 3.1 Create WinRM HTTP Rule (Port 5985)
+```bash
+# Create firewall rule for WinRM HTTP
+gcloud compute firewall-rules create allow-winrm-http \
+    --allow tcp:5985 \
+    --source-ranges 0.0.0.0/0 \
+    --description "Allow WinRM HTTP connections" \
+    --direction INGRESS
+```
+
+#### 3.2 Create WinRM HTTPS Rule (Port 5986) - Optional
+```bash
+# Create firewall rule for WinRM HTTPS
+gcloud compute firewall-rules create allow-winrm-https \
+    --allow tcp:5986 \
+    --source-ranges 0.0.0.0/0 \
+    --description "Allow WinRM HTTPS connections" \
+    --direction INGRESS
+```
+
+#### 3.3 Create RDP Rule (Port 3389) - For VM Access
+```bash
+# Create firewall rule for RDP
+gcloud compute firewall-rules create allow-rdp \
+    --allow tcp:3389 \
+    --source-ranges 0.0.0.0/0 \
+    --description "Allow RDP connections" \
+    --direction INGRESS
+```
+
+### Step 4: Verify Firewall Rules
+
+```bash
+# List all firewall rules
+gcloud compute firewall-rules list
+
+# Check specific rule
+gcloud compute firewall-rules describe allow-winrm-http
+
+# Test connectivity to your VM
+nc -zv YOUR_VM_IP 5985
+```
+
+### Step 5: Apply Firewall Rules to VM (if using network tags)
+
+If your VM uses network tags, apply the rules:
+
+```bash
+# Add network tag to your VM
+gcloud compute instances add-tags YOUR_VM_NAME \
+    --tags winrm-enabled
+
+# Update firewall rule to target specific VMs
+gcloud compute firewall-rules update allow-winrm-http \
+    --target-tags winrm-enabled
+```
+
+## 🧪 Testing the Setup
+
+### Step 1: Test WinRM Connection
 
 From your host machine, test the WinRM connection:
 
 ```bash
-# Test basic connectivity
-ansible -i "34.93.43.151," -m win_ping -e "ansible_user=admin ansible_password='Pwvp_ae{Q0Zg+B:' ansible_connection=winrm ansible_winrm_server_cert_validation=ignore ansible_winrm_transport=basic"
+# Test basic connectivity with environment variables
+export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES
+export ANSIBLE_FORKS=1
+
+# Test Ansible connectivity
+ansible all -i "YOUR_VM_IP," -m win_ping -e "ansible_user=admin ansible_password='YOUR_PASSWORD' ansible_connection=winrm ansible_winrm_server_cert_validation=ignore ansible_winrm_transport=basic ansible_port=5985"
+```
+
+### Step 2: Test IIS Management
+
+```bash
+# Check IIS status
+ansible all -i "YOUR_VM_IP," -m win_service -a "name=W3SVC" -e "ansible_user=admin ansible_password='YOUR_PASSWORD' ansible_connection=winrm ansible_winrm_server_cert_validation=ignore ansible_winrm_transport=basic ansible_port=5985"
+
+# Start IIS
+ansible all -i "YOUR_VM_IP," -m win_service -a "name=W3SVC state=started" -e "ansible_user=admin ansible_password='YOUR_PASSWORD' ansible_connection=winrm ansible_winrm_server_cert_validation=ignore ansible_winrm_transport=basic ansible_port=5985"
 ```
 
 ## 🔧 Troubleshooting
@@ -161,13 +288,21 @@ export ANSIBLE_FORKS=1
 
 #### 2. WinRM Connection Failed
 - Verify WinRM is enabled on Windows VM
-- Check firewall rules (both Windows and cloud provider)
+- Check firewall rules (both Windows and GCP)
 - Ensure credentials are correct
 - Test with basic Ansible command first
 
-#### 3. URL Parsing Errors
-- Use POST requests instead of GET for endpoints with special characters
-- URL-encode special characters in passwords for GET requests
+#### 3. GCP Firewall Issues
+```bash
+# Check if firewall rules exist
+gcloud compute firewall-rules list --filter="name~allow-winrm"
+
+# Check VM network configuration
+gcloud compute instances describe YOUR_VM_NAME --zone=YOUR_ZONE
+
+# Test network connectivity
+nc -zv YOUR_VM_IP 5985
+```
 
 #### 4. IIS Not Starting
 - Check if IIS is installed on Windows VM
@@ -189,16 +324,64 @@ Test-WSMan -ComputerName localhost
 
 # Check firewall rules
 Get-NetFirewallRule | Where-Object {$_.DisplayName -like "*WinRM*"}
+
+# Check IIS status
+Get-Service -Name W3SVC | Select-Object Name, Status, StartType, DisplayName
 ```
 
 #### On Host Machine
 ```bash
 # Test Ansible connectivity
-ansible -i "YOUR_VM_IP," -m win_ping -e "ansible_user=admin ansible_password='YOUR_PASSWORD' ansible_connection=winrm ansible_winrm_server_cert_validation=ignore ansible_winrm_transport=basic"
+ansible all -i "YOUR_VM_IP," -m win_ping -e "ansible_user=admin ansible_password='YOUR_PASSWORD' ansible_connection=winrm ansible_winrm_server_cert_validation=ignore ansible_winrm_transport=basic ansible_port=5985"
 
 # Check application logs
 tail -f logs/application.log
+
+# Test network connectivity
+nc -zv YOUR_VM_IP 5985
 ```
+
+## 🚀 Running the Application
+
+### Step 1: Clone and Build
+```bash
+# Clone the repository
+git clone <repository-url>
+cd ansible-ping
+
+# Build the application
+mvn clean install
+```
+
+### Step 2: Run the Application
+```bash
+# Run with Maven
+mvn spring-boot:run
+
+# Or run the JAR file
+java -jar target/ansible-ping-0.0.1-SNAPSHOT.jar
+```
+
+### Step 3: Access the Web Interface
+Open your browser and navigate to: `http://localhost:8080`
+
+### Step 4: Configure VM Details
+1. Enter your Windows VM IP address
+2. Enter the admin username
+3. Enter the admin password
+4. Test connectivity using the "Ping VM" button
+
+## 📝 API Endpoints
+
+- `POST /ping-vm` - Test VM connectivity
+- `POST /check-iis-status` - Check IIS service status
+- `POST /start-iis` - Start IIS service
+- `POST /stop-iis` - Stop IIS service
+- `POST /restart-iis` - Restart IIS service
+- `GET /monitor/status` - Get monitoring status
+- `POST /monitor/enable` - Enable auto-monitoring
+- `POST /monitor/disable` - Disable auto-monitoring
+- `POST /monitor/check-now` - Trigger immediate status check
 
 ## 📊 Monitoring
 

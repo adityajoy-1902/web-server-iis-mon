@@ -18,7 +18,8 @@ public class AnsibleService {
             host, user, pass
         );
         
-        return executeCommand(command);
+        String result = executeCommand(command);
+        return parsePingResult(result);
     }
 
     /**
@@ -32,7 +33,8 @@ public class AnsibleService {
             host, user, pass
         );
         
-        return executeCommand(command);
+        String result = executeCommand(command);
+        return parseIISStatusResult(result);
     }
 
     /**
@@ -46,7 +48,8 @@ public class AnsibleService {
             host, user, pass
         );
         
-        return executeCommand(command);
+        String result = executeCommand(command);
+        return parseServiceActionResult(result, "started");
     }
 
     /**
@@ -60,7 +63,8 @@ public class AnsibleService {
             host, user, pass
         );
         
-        return executeCommand(command);
+        String result = executeCommand(command);
+        return parseServiceActionResult(result, "stopped");
     }
 
     /**
@@ -74,7 +78,64 @@ public class AnsibleService {
             host, user, pass
         );
         
-        return executeCommand(command);
+        String result = executeCommand(command);
+        return parseServiceActionResult(result, "restarted");
+    }
+
+    /**
+     * Parse ping result and return clean status
+     */
+    private String parsePingResult(String result) {
+        if (result.contains("SUCCESS") && result.contains("ping") && result.contains("pong")) {
+            return "🟢 CONNECTED - VM is reachable and responding";
+        } else if (result.contains("UNREACHABLE")) {
+            return "🔴 UNREACHABLE - Cannot connect to VM";
+        } else if (result.contains("FAILED")) {
+            return "🔴 FAILED - Connection failed";
+        } else {
+            return "🟡 UNKNOWN - Unexpected response: " + result;
+        }
+    }
+
+    /**
+     * Parse IIS status result and return clean status
+     */
+    private String parseIISStatusResult(String result) {
+        if (result.contains("SUCCESS") && result.contains("state") && result.contains("running")) {
+            return "🟢 RUNNING - IIS is active and serving requests";
+        } else if (result.contains("SUCCESS") && result.contains("state") && result.contains("stopped")) {
+            return "🔴 STOPPED - IIS is not running";
+        } else if (result.contains("UNREACHABLE")) {
+            return "🔴 UNREACHABLE - Cannot connect to VM";
+        } else if (result.contains("FAILED")) {
+            return "🔴 FAILED - Failed to check IIS status";
+        } else {
+            return "🟡 UNKNOWN - Unexpected response: " + result;
+        }
+    }
+
+    /**
+     * Parse service action result and return clean status
+     */
+    private String parseServiceActionResult(String result, String action) {
+        // Check for successful service start/stop with state confirmation
+        if ((result.contains("SUCCESS") || result.contains("CHANGED")) && 
+            result.contains("changed") && result.contains("true") && 
+            result.contains("\"state\": \"running\"")) {
+            return "✅ SUCCESS - IIS has been " + action + " successfully";
+        } else if ((result.contains("SUCCESS") || result.contains("CHANGED")) && 
+                   result.contains("changed") && result.contains("false")) {
+            return "ℹ️ NO CHANGE - IIS was already " + action;
+        } else if (result.contains("UNREACHABLE")) {
+            return "🔴 UNREACHABLE - Cannot connect to VM";
+        } else if (result.contains("FAILED")) {
+            return "🔴 FAILED - Failed to " + action + " IIS";
+        } else if ((result.contains("SUCCESS") || result.contains("CHANGED")) && 
+                   result.contains("changed") && result.contains("true")) {
+            return "✅ SUCCESS - IIS has been " + action + " successfully";
+        } else {
+            return "🟡 UNKNOWN - Unexpected response: " + result;
+        }
     }
 
     /**
